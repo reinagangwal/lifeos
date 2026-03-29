@@ -36,7 +36,7 @@ def list_habits():
     rows = query(
         """
         SELECT habit_id, habit_name, frequency, target_count, habit_type,
-               current_streak, best_streak, is_active, created_at
+               current_streak, best_streak, is_active, created_at, days_of_week
         FROM Habits
         WHERE user_id = %s
         ORDER BY is_active DESC, created_at DESC
@@ -58,6 +58,10 @@ def create_habit():
     frequency    = d.get("frequency", "daily")
     target_count = int(d.get("target_count", 1))
     habit_type   = d.get("habit_type", "binary")
+    # days_of_week: comma-separated 0-6 indices (0=Mon…6=Sun), stored as string
+    days_of_week = d.get("days_of_week", None)
+    if days_of_week is not None and isinstance(days_of_week, list):
+        days_of_week = ",".join(str(x) for x in sorted(days_of_week))
 
     if not name:
         return jsonify({"error": "habit_name is required"}), 400
@@ -70,11 +74,11 @@ def create_habit():
 
     habit_id = query(
         """
-        INSERT INTO Habits (user_id, habit_name, frequency, target_count, habit_type)
-        VALUES (%s, %s, %s, %s, %s)
+        INSERT INTO Habits (user_id, habit_name, frequency, target_count, habit_type, days_of_week)
+        VALUES (%s, %s, %s, %s, %s, %s)
         RETURNING habit_id INTO %s
         """,
-        (request.user_id, name, frequency, target_count, habit_type),
+        (request.user_id, name, frequency, target_count, habit_type, days_of_week),
         commit=True, out_id_type='NUMBER'
     )
     return jsonify({"habit_id": habit_id, "habit_name": name}), 201
@@ -117,6 +121,15 @@ def update_habit(habit_id):
         if d["habit_type"] not in ("binary", "count"):
             return jsonify({"error": "Invalid habit_type"}), 400
         fields.append("habit_type = %s");   vals.append(d["habit_type"])
+    if "days_of_week" in d:
+        dow = d["days_of_week"]
+        if dow is None:
+            fields.append("days_of_week = %s"); vals.append(None)
+        elif isinstance(dow, list):
+            fields.append("days_of_week = %s")
+            vals.append(",".join(str(x) for x in sorted(dow)) if dow else None)
+        else:
+            fields.append("days_of_week = %s"); vals.append(str(dow))
 
     if not fields:
         return jsonify({"error": "Nothing to update"}), 400
@@ -159,9 +172,16 @@ def log_habit(habit_id):
         return jsonify({"error": "Habit not found"}), 404
 
     d                = request.get_json(force=True) or {}
-    log_date         = d.get("log_date", str(datetime.date.today()))
+    log_date_str     = d.get("log_date", str(datetime.date.today()))
     status           = int(d.get("status", 1))
     completion_count = int(d.get("completion_count", 0))
+
+    # Parse date string → Python date so oracledb passes a proper Oracle DATE
+    # (passing a raw string to callproc with IN DATE param raises ORA-06502)
+    try:
+        log_date = datetime.date.fromisoformat(log_date_str)
+    except (ValueError, TypeError):
+        log_date = datetime.date.today()
 
     # For binary habits, completion_count mirrors status; for count habits,
     # status is 1 if count >= target.
@@ -201,14 +221,14 @@ def habit_logs(habit_id):
         return jsonify({"error": "Habit not found"}), 404
     limit = min(int(request.args.get("limit", 30)), 365)
     rows = query(
-        """
+        f"""
         SELECT log_id, log_date, status, completion_count, logged_at
         FROM Habit_Logs
-        WHERE habit_id = %s
+        WHERE habit_id = :1
         ORDER BY log_date DESC
-        LIMIT %s
+        FETCH FIRST {limit} ROWS ONLY
         """,
-        (habit_id, limit)
+        (habit_id,)
     )
     return jsonify(rows)
 

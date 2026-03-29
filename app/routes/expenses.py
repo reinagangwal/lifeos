@@ -55,7 +55,7 @@ def add_expense():
         """
         SELECT overage FROM Budget_Alerts
         WHERE expense_id = %s
-        LIMIT 1
+        FETCH FIRST 1 ROWS ONLY
         """,
         (expense_id,), fetch_one=True
     )

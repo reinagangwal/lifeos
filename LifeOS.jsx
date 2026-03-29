@@ -18,6 +18,8 @@ const today    = new Date();
 const todayStr = today.toISOString().slice(0,10);
 const todayDow = today.getDay()===0 ? 6 : today.getDay()-1;
 const WEEK_DAYS= ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
+const todayHour = today.getHours();
+const greeting = todayHour < 12 ? "Morning" : todayHour < 17 ? "Afternoon" : "Evening";
 const weekDates= Array.from({length:7},(_,i)=>{
   const d=new Date(today); d.setDate(today.getDate()-todayDow+i); return d.getDate();
 });
@@ -87,6 +89,72 @@ function PillChart({data}) {
   );
 }
 
+// ── RADAR CHART ───────────────────────────────────────────────────────────────
+function RadarChart({data}) {
+  if(!data||data.length===0) return null;
+  const cx=240,cy=140,r=100;
+  const n=data.length;
+  const axes=data.map((_,i)=>{
+    const angle=(Math.PI*2*i/n)-Math.PI/2;
+    return {x:cx+r*Math.cos(angle),y:cy+r*Math.sin(angle)};
+  });
+  const gridLevels=[0.25,0.5,0.75,1];
+  const toPoint=(i,pct)=>{
+    const angle=(Math.PI*2*i/n)-Math.PI/2;
+    const dist=r*pct;
+    return {x:cx+dist*Math.cos(angle),y:cy+dist*Math.sin(angle)};
+  };
+  const polyPts=data.map((d,i)=>toPoint(i,d.completion_pct/100));
+  const polyStr=polyPts.map(p=>`${p.x},${p.y}`).join(" ");
+  const gridStr=(pct)=>axes.map(a=>{
+    const px=cx+(a.x-cx)*pct;
+    const py=cy+(a.y-cy)*pct;
+    return `${px},${py}`;
+  }).join(" ");
+  return (
+    <svg width="100%" viewBox="0 0 480 280" style={{display:"block",margin:"0 auto"}}>
+      {gridLevels.map((pct,gi)=>(
+        <polygon key={gi} points={gridStr(pct)} fill="none" stroke={C.sand} strokeWidth="1.2"/>
+      ))}
+      {axes.map((a,i)=>(
+        <line key={i} x1={cx} y1={cy} x2={a.x} y2={a.y} stroke={C.sand} strokeWidth="1.2"/>
+      ))}
+      <polygon points={polyStr} fill={C.orange+"35"} stroke={C.orange} strokeWidth="2" strokeLinejoin="round"/>
+      {polyPts.map((p,i)=>(
+        <circle key={i} cx={p.x} cy={p.y} r="4" fill={C.orange} stroke="#FFF" strokeWidth="1.5"/>
+      ))}
+      {axes.map((a,i)=>{
+        const lx=cx+(a.x-cx)*1.15;
+        const ly=cy+(a.y-cy)*1.15;
+        
+        let anchor = "middle";
+        if (a.x < cx - 10) anchor = "end";
+        else if (a.x > cx + 10) anchor = "start";
+        
+        // Push top/bottom labels out a tiny bit more vertically
+        const finalLy = Math.abs(a.x - cx) < 10 ? (a.y < cy ? ly - 5 : ly + 5) : ly;
+
+        return (
+          <text key={i} x={lx} y={finalLy} textAnchor={anchor} dominantBaseline="middle"
+            fontSize="10" fontFamily="Nunito,sans-serif" fontWeight="700" fill={C.brownMid}>
+            {data[i].habit_name.length>14?data[i].habit_name.slice(0,13)+"…":data[i].habit_name}
+          </text>
+        );
+      })}
+      {data.map((d,i)=>{
+        const p=toPoint(i,d.completion_pct/100);
+        if(d.completion_pct===0) return null;
+        return (
+          <text key={i} x={p.x} y={p.y-8} textAnchor="middle" fontSize="8"
+            fontFamily="Nunito,sans-serif" fontWeight="800" fill={C.orange}>
+            {d.completion_pct}%
+          </text>
+        );
+      })}
+    </svg>
+  );
+}
+
 // ── AUTH ─────────────────────────────────────────────────────────────────────
 function AuthScreen({onAuth}) {
   const [mode,setMode]=useState("login");
@@ -99,7 +167,8 @@ function AuthScreen({onAuth}) {
   const submit=async()=>{
     setError("");setLoading(true);
     try{
-      const d=await api(mode==="/login"?"/auth/login":"/auth/register",{method:"POST",body:mode==="login"?{email,password:pass}:{name,email,password:pass}});
+      // Bug 2 fix: was mode==="/login" (typo), now correctly mode==="login"
+      const d=await api(mode==="login"?"/auth/login":"/auth/register",{method:"POST",body:mode==="login"?{email,password:pass}:{name,email,password:pass}});
       TS.set(d.token);onAuth(d.token);
     }catch(e){setError(e.message);}finally{setLoading(false);}
   };
@@ -107,10 +176,11 @@ function AuthScreen({onAuth}) {
     <div style={{minHeight:"100vh",background:C.cream,display:"flex",alignItems:"center",justifyContent:"center",padding:"0 24px",fontFamily:"'Nunito',system-ui,sans-serif"}}>
       <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&display=swap" rel="stylesheet"/>
       <div style={{width:"100%",maxWidth:390}}>
-        <div style={{textAlign:"center",marginBottom:40}}>
-          <div style={{fontSize:56,marginBottom:8}}>🌱</div>
-          <h1 style={{margin:0,fontSize:32,fontWeight:900,color:C.brown,letterSpacing:"-.5px"}}>LifeOS</h1>
-          <p style={{margin:"6px 0 0",fontSize:14,color:C.textMuted}}>Build better days, one habit at a time</p>
+        {/* Bug 1 fix: flex column so icon + title are tightly centred */}
+        <div style={{display:"flex",flexDirection:"column",alignItems:"center",marginBottom:40,gap:4}}>
+          <div style={{fontSize:56,lineHeight:1}}>🌱</div>
+          <h1 style={{margin:"8px 0 0",fontSize:32,fontWeight:900,color:C.brown,letterSpacing:"-.5px"}}>LifeOS</h1>
+          <p style={{margin:"4px 0 0",fontSize:14,color:C.textMuted,textAlign:"center"}}>Build better days, one habit at a time</p>
         </div>
         <SegControl options={[["login","Sign In"],["register","Create Account"]]} value={mode} onChange={(m)=>{setMode(m);setError("");}}/>
         <div style={{marginTop:20}}>
@@ -126,21 +196,32 @@ function AuthScreen({onAuth}) {
 }
 
 // ── HOME ─────────────────────────────────────────────────────────────────────
-function HomeScreen({token,user,habits,setHabits,loadHabits,setScreen}) {
-  const [selDay,setSelDay]=useState(todayDow);
+function HomeScreen({token,user,habits,setHabits,setUser,loadHabits,setScreen}) {
   const [toggling,setToggling]=useState(null);
+  const [toggleErr,setToggleErr]=useState("");
   const done=habits.filter(h=>h.done).length;
 
   const toggle=async(h)=>{
-    if(toggling) return;
+    // Only block the specific habit being toggled, not all habits
+    if(toggling===h.habit_id) return;
     setToggling(h.habit_id);
+    setToggleErr("");
     const newDone=!h.done;
+    // Optimistic update
     setHabits(p=>p.map(x=>x.habit_id===h.habit_id?{...x,done:newDone}:x));
     try{
-      await api(`/habits/${h.habit_id}/log`,{method:"POST",token,body:{log_date:todayStr,status:newDone?1:0}});
-      await loadHabits();
-    }catch{
+      const res=await api(`/habits/${h.habit_id}/log`,{method:"POST",token,body:{log_date:todayStr,status:newDone?1:0}});
+      // Update streak + points directly from response — DO NOT call loadHabits()
+      // loadHabits overwrites the whole array and races against the done state
+      setHabits(p=>p.map(x=>x.habit_id===h.habit_id
+        ?{...x,done:newDone,current_streak:res.current_streak??x.current_streak}
+        :x
+      ));
+      if(res.user_points!=null) setUser(u=>u?{...u,points:res.user_points}:u);
+    }catch(e){
+      // revert
       setHabits(p=>p.map(x=>x.habit_id===h.habit_id?{...x,done:!newDone}:x));
+      setToggleErr(e.message||"Could not save — check your connection");
     }finally{setToggling(null);}
   };
 
@@ -149,7 +230,7 @@ function HomeScreen({token,user,habits,setHabits,loadHabits,setScreen}) {
       <div style={{padding:"52px 24px 16px",display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
         <div>
           <p style={{margin:0,fontSize:13,color:C.textMuted,fontWeight:500}}>{today.toLocaleDateString("en-US",{weekday:"long",day:"numeric",month:"long",year:"numeric"})}</p>
-          <h1 style={{margin:"4px 0 0",fontSize:30,fontWeight:900,color:C.brown,letterSpacing:"-.5px"}}>Morning, {user?.name?.split(" ")[0]||"there"}</h1>
+          <h1 style={{margin:"4px 0 0",fontSize:30,fontWeight:900,color:C.brown,letterSpacing:"-.5px"}}>{greeting}, {user?.name?.split(" ")[0]||"there"}</h1>
         </div>
         <div style={{width:44,height:44,borderRadius:"50%",background:C.orange,display:"flex",alignItems:"center",justifyContent:"center",fontSize:22}}>🐯</div>
       </div>
@@ -157,9 +238,9 @@ function HomeScreen({token,user,habits,setHabits,loadHabits,setScreen}) {
       {/* Week strip */}
       <div style={{padding:"0 20px 8px",display:"flex",gap:4}}>
         {WEEK_DAYS.map((d,i)=>(
-          <div key={i} onClick={()=>setSelDay(i)} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:6,padding:"10px 0",borderRadius:16,cursor:"pointer",background:selDay===i?C.brown:"transparent",transition:"all .2s"}}>
-            <span style={{fontSize:9,color:selDay===i?"#FFF":C.textMuted,fontWeight:600,textTransform:"uppercase"}}>{d}</span>
-            <span style={{fontSize:15,fontWeight:700,color:selDay===i?"#FFF":C.brown}}>{weekDates[i]}</span>
+          <div key={i} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:6,padding:"10px 0",borderRadius:16,background:todayDow===i?C.brown:"transparent"}}>
+            <span style={{fontSize:9,color:todayDow===i?"#FFF":C.textMuted,fontWeight:600,textTransform:"uppercase"}}>{d}</span>
+            <span style={{fontSize:15,fontWeight:700,color:todayDow===i?"#FFF":C.brown}}>{weekDates[i]}</span>
           </div>
         ))}
       </div>
@@ -181,6 +262,7 @@ function HomeScreen({token,user,habits,setHabits,loadHabits,setScreen}) {
           <h2 style={{margin:0,fontSize:18,fontWeight:800,color:C.brown}}>Daily routine</h2>
           <button onClick={()=>setScreen("habits")} style={{background:"none",border:"none",fontSize:13,color:C.orange,fontFamily:"inherit",cursor:"pointer",fontWeight:600}}>See all</button>
         </div>
+        {toggleErr&&<div style={{background:"#FDECEA",border:"1px solid #F5C6C6",borderRadius:10,padding:"8px 12px",color:C.danger,fontSize:12,marginBottom:10}}>{toggleErr}</div>}
         {habits.length===0?(
           <div style={{textAlign:"center",padding:"40px 0",color:C.textMuted}}>
             <p style={{fontSize:32,margin:"0 0 8px"}}>🌱</p>
@@ -244,15 +326,14 @@ function ProgressScreen({token,setScreen}) {
   const BEMOJI={streak_7:"🏅",streak_30:"🥈",streak_100:"🥇",total_10:"🌿",total_50:"⚡",total_100:"💎",points_100:"⭐",points_500:"🌟",points_1000:"🏆"};
 
   useEffect(()=>{
-    const isoWeek=Math.ceil((((today-new Date(today.getFullYear(),0,1))/86400000)+new Date(today.getFullYear(),0,1).getDay()+1)/7);
     Promise.all([
       api("/dashboard/summary",{token}),
-      api(`/dashboard/weekly?year=${today.getFullYear()}&week=${isoWeek}`,{token}),
+      api(`/dashboard/weekly?date=${todayStr}`,{token}),
       api("/dashboard/badges",{token}),
       api(`/dashboard/monthly?month=${todayStr.slice(0,7)}`,{token}),
     ]).then(([s,w,b,m])=>{
       setSummary(s);
-      setWeekly((w.habits||[]).slice(0,4).map((h,i)=>({habit_name:h.habit_name,completion_pct:Math.round(h.completion_pct||0),color:C.chartCols[i%4]})));
+      setWeekly((w.habits||[]).slice(0,4).map((h,i)=>({habit_name:h.habit_name,completion_pct:Math.min(100, Math.round(h.completion_pct||0)),color:C.chartCols[i%4]})));
       setBadges(b||[]);setMonthly(m);
     }).catch(e=>setError(e.message)).finally(()=>setLoading(false));
   },[token]);
@@ -266,7 +347,14 @@ function ProgressScreen({token,setScreen}) {
         <button onClick={()=>setScreen("home")} style={{width:40,height:40,borderRadius:"50%",background:C.sand,border:"none",cursor:"pointer",fontSize:18,display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>
       </div>
       <Err msg={error}/>
-      {weekly.length>0?<PillChart data={weekly}/>:<div style={{textAlign:"center",padding:"40px 0",color:C.textMuted,fontSize:13}}>Log some habits to see weekly charts!</div>}
+      {weekly.length>0?(
+        <>
+          <p style={{margin:"0 0 10px",fontSize:13,fontWeight:700,color:C.textMuted,textTransform:"uppercase",letterSpacing:".5px"}}>Completion Radar</p>
+          <RadarChart data={weekly}/>
+          <p style={{margin:"24px 0 10px",fontSize:13,fontWeight:700,color:C.textMuted,textTransform:"uppercase",letterSpacing:".5px"}}>Weekly Bars</p>
+          <PillChart data={weekly}/>
+        </>
+      ):<div style={{textAlign:"center",padding:"40px 0",color:C.textMuted,fontSize:13}}>Log some habits to see weekly charts!</div>}
 
       <Card style={{marginTop:28}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:16}}>
@@ -324,12 +412,39 @@ function ProgressScreen({token,setScreen}) {
 function HabitsScreen({token,habits,loadHabits,setScreen}) {
   const [deleting,setDeleting]=useState(null);
   const [error,setError]=useState("");
+  const [editingDays,setEditingDays]=useState(null); // habit_id being edited
+  const [dayDraft,setDayDraft]=useState([]);          // days currently selected
+  const [savingDays,setSavingDays]=useState(false);
+  const DAYS=["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
+
   const del=async(id)=>{
     if(!window.confirm("Deactivate this habit?")) return;
     setDeleting(id);
     try{await api(`/habits/${id}`,{method:"DELETE",token});await loadHabits();}
     catch(e){setError(e.message);}finally{setDeleting(null);}
   };
+
+  const openDayEditor=(h)=>{
+    // Parse existing days_of_week string "0,1,4" → [0,1,4], or default to all days
+    const current = h.days_of_week
+      ? String(h.days_of_week).split(",").map(Number)
+      : [0,1,2,3,4,5,6];
+    setDayDraft(current);
+    setEditingDays(h.habit_id);
+  };
+
+  const saveDays=async(habitId)=>{
+    if(dayDraft.length===0){setError("Pick at least one day");return;}
+    setSavingDays(true);setError("");
+    try{
+      await api(`/habits/${habitId}`,{method:"PUT",token,body:{days_of_week:dayDraft}});
+      await loadHabits();
+      setEditingDays(null);
+    }catch(e){setError(e.message);}finally{setSavingDays(false);}
+  };
+
+  const toggleDayDraft=(i)=>setDayDraft(p=>p.includes(i)?p.filter(d=>d!==i):[...p,i]);
+
   return (
     <div style={{padding:"52px 24px 100px"}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:24}}>
@@ -345,23 +460,52 @@ function HabitsScreen({token,habits,loadHabits,setScreen}) {
       ):(
         <div style={{display:"flex",flexDirection:"column",gap:14}}>
           {habits.map(h=>(
-            <Card key={h.habit_id} style={{display:"flex",gap:14,alignItems:"center"}}>
-              <IconBadge icon={h.icon} color={h.color}/>
-              <div style={{flex:1,minWidth:0}}>
-                <p style={{margin:0,fontSize:15,fontWeight:700,color:C.brown,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{h.habit_name}</p>
-                <div style={{display:"flex",gap:6,marginTop:6,flexWrap:"wrap"}}>
-                  <span style={{fontSize:10,background:C.sand,color:C.brownMid,borderRadius:50,padding:"2px 10px",fontWeight:700}}>{h.frequency}</span>
-                  <span style={{fontSize:10,background:C.sand,color:C.brownMid,borderRadius:50,padding:"2px 10px",fontWeight:700}}>{h.habit_type}</span>
+            <div key={h.habit_id}>
+              <Card style={{display:"flex",gap:14,alignItems:"center"}}>
+                <IconBadge icon={h.icon} color={h.color}/>
+                <div style={{flex:1,minWidth:0}}>
+                  <p style={{margin:0,fontSize:15,fontWeight:700,color:C.brown,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{h.habit_name}</p>
+                  <div style={{display:"flex",gap:6,marginTop:6,flexWrap:"wrap",alignItems:"center"}}>
+                    <span style={{fontSize:10,background:C.sand,color:C.brownMid,borderRadius:50,padding:"2px 10px",fontWeight:700}}>{h.frequency}</span>
+                    <span style={{fontSize:10,background:C.sand,color:C.brownMid,borderRadius:50,padding:"2px 10px",fontWeight:700}}>{h.habit_type}</span>
+                    {h.frequency==="weekly"&&(
+                      <button onClick={()=>editingDays===h.habit_id?setEditingDays(null):openDayEditor(h)}
+                        style={{fontSize:9,background:editingDays===h.habit_id?C.brown:C.orange+"22",color:editingDays===h.habit_id?"#FFF":C.orange,border:"none",borderRadius:50,padding:"2px 10px",fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+                        {editingDays===h.habit_id?"✕ cancel":"📅 Edit days"}
+                      </button>
+                    )}
+                  </div>
                 </div>
-              </div>
-              <div style={{textAlign:"right",flexShrink:0}}>
-                <p style={{margin:0,fontSize:22,fontWeight:900,color:C.orange}}>{h.current_streak}</p>
-                <p style={{margin:0,fontSize:9,color:C.textMuted}}>day streak</p>
-              </div>
-              <button onClick={()=>del(h.habit_id)} disabled={deleting===h.habit_id} style={{background:"none",border:"none",cursor:"pointer",fontSize:18,opacity:.35,padding:"4px",lineHeight:1}}>🗑</button>
-            </Card>
-          ))}
-        </div>
+                <div style={{textAlign:"right",flexShrink:0}}>
+                  <p style={{margin:0,fontSize:22,fontWeight:900,color:C.orange}}>{h.current_streak}</p>
+                  <p style={{margin:0,fontSize:9,color:C.textMuted}}>day streak</p>
+                </div>
+                <button onClick={()=>del(h.habit_id)} disabled={deleting===h.habit_id} style={{background:"none",border:"none",cursor:"pointer",fontSize:18,opacity:.35,padding:"4px",lineHeight:1}}>🗑</button>
+              </Card>
+              {/* Inline day-editor panel for weekly habits */}
+              {editingDays===h.habit_id&&(
+                <div style={{background:C.sand,borderRadius:16,padding:"14px 16px",marginTop:-8,borderTop:"none"}}>
+                  <p style={{margin:"0 0 10px",fontSize:11,fontWeight:700,color:C.textMuted,textTransform:"uppercase",letterSpacing:".5px"}}>Which days should this appear?</p>
+                  <div style={{display:"flex",gap:6,marginBottom:12}}>
+                    {DAYS.map((d,i)=>(
+                      <button key={i} onClick={()=>toggleDayDraft(i)}
+                        style={{flex:1,aspectRatio:"1",borderRadius:"50%",
+                          background:dayDraft.includes(i)?C.orange:"transparent",
+                          color:dayDraft.includes(i)?"#FFF":C.textMuted,
+                          border:dayDraft.includes(i)?"none":"1px solid #CCC8BE",
+                          fontFamily:"inherit",fontSize:11,fontWeight:700,cursor:"pointer",transition:"all .15s"}}>
+                        {d}
+                      </button>
+                    ))}
+                  </div>
+                  <button onClick={()=>saveDays(h.habit_id)} disabled={savingDays}
+                    style={{width:"100%",padding:"10px 0",background:C.orange,color:"#FFF",border:"none",borderRadius:50,fontFamily:"inherit",fontSize:13,fontWeight:700,cursor:"pointer"}}>
+                    {savingDays?"Saving…":"Save schedule"}
+                  </button>
+                </div>
+              )}
+            </div>
+          ))}\n        </div>
       )}
     </div>
   );
@@ -385,9 +529,14 @@ function NewHabitScreen({token,loadHabits,setScreen}) {
 
   const save=async()=>{
     if(!name.trim()){setError("Please enter a habit name");return;}
+    // Bug 5 fix: send selDays so backend can store days_of_week
+    if(freq==="weekly"&&selDays.length===0){setError("Pick at least one day for weekly habits");return;}
     setError("");setLoading(true);
     try{
-      await api("/habits/",{method:"POST",token,body:{habit_name:name.trim(),frequency:freq,habit_type:type,target_count:target}});
+      await api("/habits/",{method:"POST",token,body:{
+        habit_name:name.trim(),frequency:freq,habit_type:type,target_count:target,
+        days_of_week: freq==="weekly" ? selDays : null,
+      }});
       await loadHabits();setScreen("habits");
     }catch(e){setError(e.message);}finally{setLoading(false);}
   };
@@ -612,7 +761,8 @@ export default function App() {
   const [token,setToken]=useState(()=>TS.get());
   const [screen,setScreen]=useState("home");
   const [user,setUser]=useState(null);
-  const [habits,setHabits]=useState([]);
+  const [habits,setHabits]=useState([]);       // today's filtered + done-checked
+  const [allHabits,setAllHabits]=useState([]); // all active, for My Habits screen
 
   useEffect(()=>{
     if(!token) return;
@@ -624,15 +774,25 @@ export default function App() {
     try{
       const raw=await api("/habits/",{token});
       const active=(raw||[]).filter(h=>h.is_active!==0);
-      // Check today's log for each habit in parallel
+      // All-habits list for management screen (no day filter)
+      setAllHabits(active.map(h=>({...h,icon:iconFor(h.habit_id),color:colorFor(h.habit_id)})));
+      // Filter weekly habits to today-only for home screen
+      const visibleToday=active.filter(h=>{
+        if(h.frequency!=="weekly") return true;
+        if(!h.days_of_week) return true; // legacy habit with no schedule — show always
+        const allowed=String(h.days_of_week).split(",").map(Number);
+        return allowed.includes(todayDow);
+      });
+      // Check today's log for each visible habit
       const todayMap={};
-      await Promise.allSettled(active.map(async h=>{
+      await Promise.allSettled(visibleToday.map(async h=>{
         try{
           const logs=await api(`/habits/${h.habit_id}/logs?limit=1`,{token});
-          if(logs?.[0]?.log_date===todayStr&&(logs[0].status===1||logs[0].completion_count>0)) todayMap[h.habit_id]=true;
+          const logDate=logs?.[0]?.log_date ? String(logs[0].log_date).slice(0,10) : null;
+          if(logDate===todayStr&&(logs[0].status===1||logs[0].completion_count>0)) todayMap[h.habit_id]=true;
         }catch{}
       }));
-      setHabits(active.map(h=>({...h,icon:iconFor(h.habit_id),color:colorFor(h.habit_id),done:!!todayMap[h.habit_id]})));
+      setHabits(visibleToday.map(h=>({...h,icon:iconFor(h.habit_id),color:colorFor(h.habit_id),done:!!todayMap[h.habit_id]})));
       const u=await api("/auth/me",{token});setUser(u);
     }catch{}
   },[token]);
@@ -645,8 +805,8 @@ export default function App() {
   if(!token) return <AuthScreen onAuth={handleAuth}/>;
 
   const screens={
-    home:      <HomeScreen token={token} user={user} habits={habits} setHabits={setHabits} loadHabits={loadHabits} setScreen={setScreen}/>,
-    habits:    <HabitsScreen token={token} habits={habits} loadHabits={loadHabits} setScreen={setScreen}/>,
+    home:      <HomeScreen token={token} user={user} habits={habits} setHabits={setHabits} setUser={setUser} loadHabits={loadHabits} setScreen={setScreen}/>,
+    habits:    <HabitsScreen token={token} habits={allHabits} loadHabits={loadHabits} setScreen={setScreen}/>,
     "new-habit":<NewHabitScreen token={token} loadHabits={loadHabits} setScreen={setScreen}/>,
     progress:  <ProgressScreen token={token} setScreen={setScreen}/>,
     expenses:  <ExpensesScreen token={token}/>,

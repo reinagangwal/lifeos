@@ -26,8 +26,20 @@ bp = Blueprint("dashboard", __name__)
 @bp.route("/weekly", methods=["GET"])
 @login_required
 def weekly_summary():
-    year = int(request.args.get("year", datetime.date.today().isocalendar()[0]))
-    week = int(request.args.get("week", datetime.date.today().isocalendar()[1]))
+    # Accept either date=YYYY-MM-DD (preferred) or year=&week= (legacy)
+    date_str = request.args.get("date")
+    if date_str:
+        try:
+            d = datetime.date.fromisoformat(date_str)
+            iso = d.isocalendar()  # (iso_year, iso_week, iso_weekday)
+            year = iso[0]
+            week = iso[1]
+        except (ValueError, TypeError):
+            year = datetime.date.today().isocalendar()[0]
+            week = datetime.date.today().isocalendar()[1]
+    else:
+        year = int(request.args.get("year", datetime.date.today().isocalendar()[0]))
+        week = int(request.args.get("week", datetime.date.today().isocalendar()[1]))
 
     rows = query(
         """
